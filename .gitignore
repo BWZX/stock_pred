@@ -1,2 +1,5 @@
 .ipynb_checkpoints
 result_imgs
+*.ipynb
+*.jpg
+adaboost_*
