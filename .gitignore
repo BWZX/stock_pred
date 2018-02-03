@@ -3,3 +3,6 @@ result_imgs
 *.ipynb
 *.jpg
 adaboost_*
+*__pycache__
+etc
+cache_data*

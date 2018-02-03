@@ -1,0 +1,352 @@
+import numpy as np
+import copy
+import xgboost as xgb
+import os
+import shutil
+import talib
+from opdata import opdata
+import tushare as ts
+import matplotlib
+matplotlib.use('agg')
+from matplotlib import pyplot as plt
+from matplotlib.pylab import date2num
+import matplotlib.finance as mpf
+import random
+import string
+import datetime
+import time
+from calculate_beta import *
+
+from sklearn import preprocessing
+
+import pdb
+
+pred_data_dir = "pred_more_data_alpha_900_10_norm_52_features"
+cache_data_dir = "cache_data_with_date"
+
+global predictor_names
+
+def normalize_price(adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, macd, macd_sig, macd_hist, bbandupper, bbandmiddle, bbandlower):
+    max_price = np.max(adj_close)
+
+    adj_close = adj_close / max_price
+    sma3 = sma3 / max_price
+    ema6 = ema6 / max_price
+    ema12 = ema12 / max_price
+    atr14 = atr14 / max_price
+    mom1 = mom1 / max_price
+    mom3 = mom3 / max_price
+    tsf10 = tsf10 / max_price
+    tsf20 = tsf20 / max_price
+    macd = macd / max_price
+    macd_sig = macd_sig / max_price
+    macd_hist = macd_hist / max_price
+    bbandupper = bbandupper / max_price
+    bbandmiddle = bbandmiddle / max_price
+    bbandlower = bbandlower / max_price
+
+    return adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, bbandupper, bbandmiddle, bbandlower
+
+def run(stock_list, macro_data, start_date="2011-01-01", end_date="2017-07-31", pred_interval=5):
+
+    # get macro data
+    macro_gdp_ary = np.asarray(macro_data["gdp"].tolist())
+    macro_cpi_ary = np.asarray(macro_data["cpi"].tolist())
+    macro_m2_ary = np.asarray(macro_data["m2"].tolist())
+    macro_rrr_ary = np.asarray(macro_data["rrr"].tolist())
+    macro_rate_ary = np.asarray(macro_data["rate"].tolist())
+
+    # index data (hs300)
+    stock_code = "399300"
+    index_data = ts.get_k_data(stock_code, index=True, start=start_date, end=end_date)
+
+    open_list = np.asarray(index_data["open"].tolist())
+    close_list = np.asarray(index_data["close"].tolist())
+    high_list = np.asarray(index_data["high"].tolist())
+    low_list = np.asarray(index_data["low"].tolist())
+    volume_list = np.asarray(index_data["volume"].tolist())
+    
+    hs300_adj_close = close_list
+    hs300_obv = talib.OBV(close_list, volume_list)
+    hs300_rsi6 = talib.RSI(close_list, timeperiod=6)
+    hs300_rsi12 = talib.RSI(close_list, timeperiod=12)
+    hs300_sma3 = talib.SMA(close_list, timeperiod=3)
+    hs300_ema6 = talib.EMA(close_list, timeperiod=6)
+    hs300_ema12 = talib.EMA(close_list, timeperiod=12)
+    hs300_atr14 = talib.ATR(high_list, low_list, close_list, timeperiod=14)
+    hs300_mfi14 = talib.MFI(high_list, low_list, close_list, volume_list, timeperiod=14)
+    hs300_adx14 = talib.ADX(high_list, low_list, close_list, timeperiod=14)
+    hs300_adx20 = talib.ADX(high_list, low_list, close_list, timeperiod=20)
+    hs300_mom1 = talib.MOM(close_list, timeperiod=1)
+    hs300_mom3 = talib.MOM(close_list, timeperiod=3)
+    hs300_cci12 = talib.CCI(high_list, low_list, close_list, timeperiod=14)
+    hs300_cci20 = talib.CCI(high_list, low_list, close_list, timeperiod=20)
+    hs300_rocr3 = talib.ROCR(close_list, timeperiod=3)
+    hs300_rocr12 = talib.ROCR(close_list, timeperiod=12)
+    hs300_macd, hs300_macd_sig, hs300_macd_hist = talib.MACD(close_list)
+    hs300_willr = talib.WILLR(high_list, low_list, close_list)
+    hs300_tsf10 = talib.TSF(close_list, timeperiod=10)
+    hs300_tsf20 = talib.TSF(close_list, timeperiod=20)
+    hs300_trix = talib.TRIX(close_list)
+    hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower = talib.BBANDS(close_list)
+
+    hs300_adj_close, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mom1, hs300_mom3, hs300_tsf10, hs300_tsf20, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower = \
+        normalize_price(hs300_adj_close, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mom1, hs300_mom3, hs300_tsf10, hs300_tsf20, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower)
+
+    hs300_rsi6 = (hs300_rsi6 - 50) / 50
+    hs300_rsi12 = (hs300_rsi12 - 50) / 50
+    hs300_mfi14 = (hs300_mfi14 - 50) / 50
+    hs300_adx14 = (hs300_adx14 - 50) / 50
+    hs300_adx20 = (hs300_adx20 - 50) / 50
+    hs300_willr = hs300_willr / 100
+
+    hs300_cci12 = hs300_cci12 / 1000
+    hs300_cci20 = hs300_cci20 / 1000
+
+    # training data includes samples from all stocks
+    stocks_y_data = []
+    stocks_predictors = []
+    for stock_code in stock_list:
+
+        macro_gdp_clone = copy.deepcopy(macro_gdp_ary)
+        macro_cpi_clone = copy.deepcopy(macro_cpi_ary)
+        macro_m2_clone = copy.deepcopy(macro_m2_ary)
+        macro_rrr_clone = copy.deepcopy(macro_rrr_ary)
+        macro_rate_clone = copy.deepcopy(macro_rate_ary)
+
+        cache_data_path = os.path.join(cache_data_dir, "%s_%s_%s" % (stock_code, start_date, end_date))
+        if os.path.isfile(cache_data_path):
+            f = open(cache_data_path, 'rb')
+            stock_data = pickle.load(f)
+            f.close()
+        else:
+            stock_data = opdata.get_day(stock_code, start_date, end_date)
+            f = open(cache_data_path, 'wb')
+            pickle.dump(stock_data, f)
+            f.close()
+
+        cache_finance_data_path = os.path.join(cache_data_dir, "%s_finance_%s_%s" % (stock_code, start_date, end_date))
+        if os.path.isfile(cache_finance_data_path):
+            f = open(cache_finance_data_path, 'rb')
+            finance_data = pickle.load(f)
+            f.close()
+        else:
+            finance_data = opdata.get_finance(stock_code, start_date, end_date)
+            f = open(cache_finance_data_path, 'wb')
+            pickle.dump(finance_data, f)
+            f.close()
+
+        open_list = np.asarray(stock_data["open"].tolist())
+        close_list = np.asarray(stock_data["close"].tolist())
+        high_list = np.asarray(stock_data["high"].tolist())
+        low_list = np.asarray(stock_data["low"].tolist())
+        volume_list = np.asarray(stock_data["volume"].tolist())
+
+        finance_bvps = np.asarray(finance_data["bvps"].tolist())
+        finance_epcf = np.asarray(finance_data["epcf"].tolist())
+        finance_eps = np.asarray(finance_data["eps"].tolist())
+
+        adj_close = close_list
+        obv = talib.OBV(close_list, volume_list)
+        rsi6 = talib.RSI(close_list, timeperiod=6)
+        rsi12 = talib.RSI(close_list, timeperiod=12)
+        sma3 = talib.SMA(close_list, timeperiod=3)
+        ema6 = talib.EMA(close_list, timeperiod=6)
+        ema12 = talib.EMA(close_list, timeperiod=12)
+        atr14 = talib.ATR(high_list, low_list, close_list, timeperiod=14)
+        mfi14 = talib.MFI(high_list, low_list, close_list, volume_list, timeperiod=14)
+        adx14 = talib.ADX(high_list, low_list, close_list, timeperiod=14)
+        adx20 = talib.ADX(high_list, low_list, close_list, timeperiod=20)
+        mom1 = talib.MOM(close_list, timeperiod=1)
+        mom3 = talib.MOM(close_list, timeperiod=3)
+        cci12 = talib.CCI(high_list, low_list, close_list, timeperiod=14)
+        cci20 = talib.CCI(high_list, low_list, close_list, timeperiod=20)
+        rocr3 = talib.ROCR(close_list, timeperiod=3)
+        rocr12 = talib.ROCR(close_list, timeperiod=12)
+        macd, macd_sig, macd_hist = talib.MACD(close_list)
+        willr = talib.WILLR(high_list, low_list, close_list)
+        tsf10 = talib.TSF(close_list, timeperiod=10)
+        tsf20 = talib.TSF(close_list, timeperiod=20)
+        trix = talib.TRIX(close_list)
+        bbandupper, bbandmiddle, bbandlower = talib.BBANDS(close_list)
+
+        adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, macd, macd_sig, macd_hist, bbandupper, bbandmiddle, bbandlower = \
+            normalize_price(adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, macd, macd_sig, macd_hist, bbandupper, bbandmiddle, bbandlower)
+
+        rsi6 = (rsi6 - 50) / 50
+        rsi12 = (rsi12 - 50) / 50
+        mfi14 = (mfi14 - 50) / 50
+        adx14 = (adx14 - 50) / 50
+        adx20 = (adx20 - 50) / 50
+        willr = willr / 100
+
+        cci12 = cci12 / 1000
+        cci20 = cci20 / 1000
+
+        # predictors = [adj_close, obv, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower, hs300_adj_close, hs300_obv, hs300_rsi6, hs300_rsi12, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mfi14, hs300_adx14, hs300_adx20, hs300_mom1, hs300_mom3, hs300_cci12, hs300_cci20, hs300_rocr3, hs300_rocr12, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_willr, hs300_tsf10, hs300_tsf20, hs300_trix, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower, macro_gdp_clone, macro_cpi_clone, macro_m2_clone, macro_rrr_clone, macro_rate_clone, finance_bvps, finance_epcf, finance_eps]
+        # 26 features of individual stock (obv is removed)
+        # predictors = [adj_close, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
+
+        # 52 features of individual stock and index (obv is removed)
+        predictors = [hs300_adj_close, hs300_rsi6, hs300_rsi12, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mfi14, hs300_adx14, hs300_adx20, hs300_mom1, hs300_mom3, hs300_cci12, hs300_cci20, hs300_rocr3, hs300_rocr12, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_willr, hs300_tsf10, hs300_tsf20, hs300_trix, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower, adj_close, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
+
+        # predictor_names = ["adj_close", "rsi6", "rsi12", "sma3", "ema6", "ema12", "atr14", "mfi14", "adx20", "mom1", "mom3", "cci12", "cci20", "rocr12", "macd", "macd_sig", "macd_hist", "willr", "tsf10", "tsf20", "trix", "bbandupper", "bbandmiddle", "bbandlower"]
+
+        # get the nan value index
+        max_nan_idx = -1
+        for idx, predictor in enumerate(predictors):
+            nan_idxes = np.argwhere(np.isnan(predictor))
+            if nan_idxes.shape[0] == 0:
+                continue
+            nan_idx = nan_idxes[-1, 0]
+            max_nan_idx = max(max_nan_idx, nan_idx)
+    
+        # remove nan values
+        for idx, predictor in enumerate(predictors):
+            predictor = predictor[max_nan_idx+1:]
+            predictors[idx] = predictor
+        if len(set([e.shape[0] for e in predictors])) > 1:
+            # predictors have different time length, there must be something wrong
+            continue
+
+        for idx, ele in enumerate(predictors):
+            print(idx)
+            print(np.max(ele))
+
+        import pdb
+        pdb.set_trace()
+
+        predictors = np.vstack(predictors)
+        predictors = np.transpose(predictors)
+        predictors = predictors[:-pred_interval]
+
+        # get the y data
+        date_list = np.asarray(stock_data["date"].tolist())
+        date_list = date_list[max_nan_idx+1:]
+        close_list = np.asarray(stock_data["close"].tolist())
+        close_list = close_list[max_nan_idx+1:]
+        future_close_list = close_list[pred_interval:]
+    
+        index_close_list = np.asarray(index_data["close"].tolist())
+        index_close_list = index_close_list[max_nan_idx+1:]
+        future_index_close_list = index_close_list[pred_interval:]
+    
+        y_data = []
+        
+        for idx, _ in enumerate(future_close_list):
+            stock_percent = (future_close_list[idx] / close_list[idx] - 1) * 100
+            index_percent = (future_index_close_list[idx] / index_close_list[idx] - 1) * 100
+            # the stock return should be neutralized by index return
+            _, _, _, beta = calculate_beta(stock_code, date_list[idx], pred_interval, 20)
+            # beta = 1
+            if beta == None:
+                y_data.append(None)
+                continue
+            if stock_percent - index_percent * beta >= 0:
+                y_data.append(stock_percent - index_percent * beta)
+            else:
+                y_data.append(stock_percent - index_percent * beta)
+    
+        y_data = np.asarray(y_data)
+
+        stocks_predictors.append(predictors)
+        stocks_y_data.append(y_data)
+
+    train_size = 900
+    test_size = 10
+    all_size = train_size + test_size
+
+    tot_len = stocks_predictors[0].shape[0]
+    
+    start_idx = 0
+    
+    acc_ary = []
+
+    # save data to dir
+    sub_data_dir = "pred_%d" % (pred_interval)
+    sub_data_dir_path = os.path.join(pred_data_dir, sub_data_dir)
+    if os.path.isdir(sub_data_dir_path):
+        shutil.rmtree(sub_data_dir_path)
+    os.mkdir(sub_data_dir_path)
+
+    while start_idx + all_size <= tot_len - pred_interval:
+
+        print(str(pred_interval) + ", " + str(start_idx))
+
+        train_set_x = [predictors[start_idx:start_idx+train_size-pred_interval+1] for predictors in stocks_predictors]
+        train_set_x = np.concatenate(train_set_x)
+        train_set_y = [y_data[start_idx:start_idx+train_size-pred_interval+1] for y_data in stocks_y_data]
+        train_set_y = np.concatenate(train_set_y)
+        
+        val_idx = train_set_y != None
+        train_set_x = train_set_x[val_idx,:]
+        train_set_y = train_set_y[val_idx].astype(np.float)
+        
+        # scaler = preprocessing.StandardScaler().fit(train_set_x)
+
+        test_set_x = [predictors[start_idx+train_size:start_idx+train_size+test_size] for predictors in stocks_predictors]
+        test_set_x = np.concatenate(test_set_x)
+        test_set_y = [y_data[start_idx+train_size:start_idx+train_size+test_size] for y_data in stocks_y_data]
+        test_set_y = np.concatenate(test_set_y)
+        
+        val_idx = test_set_y != None
+        test_set_x = test_set_x[val_idx,:]
+        test_set_y = test_set_y[val_idx].astype(np.float)
+        
+        # norm_train_set_x = scaler.transform(train_set_x)
+        # norm_test_set_x = scaler.transform(test_set_x)
+        norm_train_set_x = train_set_x
+        norm_test_set_x = test_set_x
+
+
+        f_train_x = open(os.path.join(sub_data_dir_path, "%d_train_x" % start_idx), 'wb')
+        f_train_y = open(os.path.join(sub_data_dir_path, "%d_train_y" % start_idx), 'wb')
+        f_test_x = open(os.path.join(sub_data_dir_path, "%d_test_x" % start_idx), 'wb')
+        f_test_y = open(os.path.join(sub_data_dir_path, "%d_test_y" % start_idx), 'wb')
+
+        pickle.dump(norm_train_set_x, f_train_x)
+        pickle.dump(train_set_y, f_train_y)
+        pickle.dump(norm_test_set_x, f_test_x)
+        pickle.dump(test_set_y, f_test_y)
+
+        f_train_x.close()
+        f_train_y.close()
+        f_test_x.close()
+        f_test_y.close()
+
+        start_idx += 10
+
+def get_macro_data(start_date, end_date):
+    macro_cache_data_path = os.path.join(cache_data_dir, "macro_%s_%s" % (start_date, end_date))
+    if os.path.isfile(macro_cache_data_path):
+        f = open(macro_cache_data_path, 'rb')
+        macro_data = pickle.load(f)
+        f.close()
+    else:
+        macro_data = opdata.macrodata(start=start_date, end=end_date)
+        f = open(macro_cache_data_path, 'wb')
+        pickle.dump(macro_data, f)
+        f.close()
+    return macro_data
+
+if __name__ == "__main__":
+
+    # for different stock codes, for different prediction intervals, for different percent
+    stock_list = ts.get_hs300s()
+    stock_list = stock_list.loc[stock_list['weight'] > 0.5]
+    
+    stock_code_list = stock_list["code"].tolist()
+    
+    initialize(stock_code_list, "2010-01-01", "2017-09-29")
+
+    pred_intervals = [1, 3, 5, 10]
+
+    macro_data = get_macro_data(start_date='2011-01-01', end_date='2017-09-29')
+
+    for pred_interval in pred_intervals:
+        run(stock_code_list,
+            macro_data,
+            start_date="2011-01-01",
+            end_date="2017-09-29",
+            pred_interval=pred_interval)
+    pdb.set_trace()
