@@ -11,7 +11,7 @@ import time
 stock_data_cache = { }
 index_data_cache = None
 
-cache_dir = "cache_data"
+cache_data_dir = "cache_data_with_date"
 index_code = "399300"
 
 min_sample_num = 10
@@ -22,28 +22,30 @@ def initialize(stock_code_list, start_str, end_str):
     global stock_data_cache
     global index_data_cache
 
-    if os.path.isdir(cache_dir) == False:
-        os.mkdir(cache_dir)
+    if os.path.isdir(cache_data_dir) == False:
+        os.mkdir(cache_data_dir)
 
-    if os.path.isfile(os.path.join(cache_dir, index_code)):
-        f = open(os.path.join(cache_dir, index_code), "rb")
+    cache_data_path = os.path.join(cache_data_dir, "%s_%s_%s" % (index_code, start_str, end_str)
+    if os.path.isfile(cache_data_path):
+        f = open(cache_data_path, "rb")
         index_data_cache = pickle.load(f)
         f.close()
     else:
         index_data_cache = ts.get_k_data(index_code, index=True, start=start_str, end=end_str)
-        f = open(os.path.join(cache_dir, index_code), "wb")
+        f = open(cache_data_path, "wb")
         pickle.dump(index_data_cache, f)
         f.close()
     print("index data cache done")
 
     for stock_code in stock_code_list:
-        if os.path.isfile(os.path.join(cache_dir, stock_code)):
-            f = open(os.path.join(cache_dir, stock_code), "rb")
+        cache_data_path = os.path.join(cache_data_dir, "%s_%s_%s" % (stock_code, start_str, end_str))
+        if os.path.isfile(cache_data_path):
+            f = open(cache_data_path, "rb")
             stock_data_cache[stock_code] = pickle.load(f)
         else:
             # stock_data_cache[stock_code] = ts.get_k_data(stock_code, start=start_str, end=end_str)
             stock_data_cache[stock_code] = opdata.get_day(stock_code, start_str, end_str)
-            f = open(os.path.join(cache_dir, stock_code), "wb")
+            f = open(cache_data_path, "wb")
             pickle.dump(stock_data_cache[stock_code], f)
         print("%s data cache done" % stock_code)
 

@@ -1,4 +1,5 @@
 import numpy as np
+import argparse
 import copy
 import xgboost as xgb
 import os
@@ -47,14 +48,14 @@ def normalize_price(adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf2
 
     return adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, bbandupper, bbandmiddle, bbandlower
 
-def run(stock_list, macro_data, start_date="2011-01-01", end_date="2017-07-31", pred_interval=5):
+def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interval=5):
 
     # get macro data
-    macro_gdp_ary = np.asarray(macro_data["gdp"].tolist())
-    macro_cpi_ary = np.asarray(macro_data["cpi"].tolist())
-    macro_m2_ary = np.asarray(macro_data["m2"].tolist())
-    macro_rrr_ary = np.asarray(macro_data["rrr"].tolist())
-    macro_rate_ary = np.asarray(macro_data["rate"].tolist())
+    # macro_gdp_ary = np.asarray(macro_data["gdp"].tolist())
+    # macro_cpi_ary = np.asarray(macro_data["cpi"].tolist())
+    # macro_m2_ary = np.asarray(macro_data["m2"].tolist())
+    # macro_rrr_ary = np.asarray(macro_data["rrr"].tolist())
+    # macro_rate_ary = np.asarray(macro_data["rate"].tolist())
 
     # index data (hs300)
     stock_code = "399300"
@@ -316,6 +317,7 @@ def run(stock_list, macro_data, start_date="2011-01-01", end_date="2017-07-31", 
 
         start_idx += 10
 
+'''
 def get_macro_data(start_date, end_date):
     macro_cache_data_path = os.path.join(cache_data_dir, "macro_%s_%s" % (start_date, end_date))
     if os.path.isfile(macro_cache_data_path):
@@ -328,25 +330,37 @@ def get_macro_data(start_date, end_date):
         pickle.dump(macro_data, f)
         f.close()
     return macro_data
+'''
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--lower_weight', help='lower bound of the stock weight in hs300', default='0,1')
+    parser.add_argument('--upper_weight', help='upper bound of the stock weight in hs300')
+    parser.add_argument('--init_start_date',
+                        help='start date of the initialization, should be earlier then start date for the calculation of beta',
+                        default='2010-01-01')
+    parser.add_argument('--start_date', help='start date of the dataset', default='2011-01-01')
+    parser.add_argument('--end_date', help='end date of the dataset', default='2017-09-29')
+    parser.add_argument('--dataset_dir', help='directory for saving the data')
+    parser.add_argument('--pred_interval', default='1,2,3,10')
+    args = parser.parse_args()
 
     # for different stock codes, for different prediction intervals, for different percent
     stock_list = ts.get_hs300s()
-    stock_list = stock_list.loc[stock_list['weight'] > 0.5]
+    
+    if args.lower_weight != None:
+        stock_list = stock_list.loc[stock_list['weight'] > args.lower_weight]
+    if args.upper_weight != None:
+        stock_list = stock_list.loc[stock_list['weight'] < args.upper_weight]
     
     stock_code_list = stock_list["code"].tolist()
     
-    initialize(stock_code_list, "2010-01-01", "2017-09-29")
+    initialize(stock_code_list, args.start_date, args.end_date)
 
-    pred_intervals = [1, 3, 5, 10]
-
-    macro_data = get_macro_data(start_date='2011-01-01', end_date='2017-09-29')
+    pred_intervals = [int(e) for e in args.pred_interval.split(',')]
 
     for pred_interval in pred_intervals:
         run(stock_code_list,
-            macro_data,
-            start_date="2011-01-01",
-            end_date="2017-09-29",
+            start_date=args.start_date,
+            end_date=args.end_date,
             pred_interval=pred_interval)
-    pdb.set_trace()
