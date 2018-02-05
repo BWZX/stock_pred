@@ -6,3 +6,4 @@ adaboost_*
 *__pycache__
 etc
 cache_data*
+hs300_data

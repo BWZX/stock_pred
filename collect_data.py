@@ -1,7 +1,6 @@
 import numpy as np
 import argparse
 import copy
-import xgboost as xgb
 import os
 import shutil
 import talib
@@ -10,22 +9,16 @@ import tushare as ts
 import matplotlib
 matplotlib.use('agg')
 from matplotlib import pyplot as plt
-from matplotlib.pylab import date2num
-import matplotlib.finance as mpf
 import random
 import string
 import datetime
 import time
-from calculate_beta import *
-
 from sklearn import preprocessing
 
+from cfgs.config import cfg
+from calculate_beta import *
+
 import pdb
-
-pred_data_dir = "pred_more_data_alpha_900_10_norm_52_features"
-cache_data_dir = "cache_data_with_date"
-
-global predictor_names
 
 def normalize_price(adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, macd, macd_sig, macd_hist, bbandupper, bbandmiddle, bbandlower):
     max_price = np.max(adj_close)
@@ -46,51 +39,53 @@ def normalize_price(adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf2
     bbandmiddle = bbandmiddle / max_price
     bbandlower = bbandlower / max_price
 
-    return adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, bbandupper, bbandmiddle, bbandlower
+    return adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, macd, macd_sig, macd_hist, bbandupper, bbandmiddle, bbandlower
 
-def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interval=5):
+def get_predictors(data):
+    open_list = np.asarray(data["open"].tolist())
+    close_list = np.asarray(data["close"].tolist())
+    high_list = np.asarray(data["high"].tolist())
+    low_list = np.asarray(data["low"].tolist())
+    volume_list = np.asarray(data["volume"].tolist())
 
-    # get macro data
-    # macro_gdp_ary = np.asarray(macro_data["gdp"].tolist())
-    # macro_cpi_ary = np.asarray(macro_data["cpi"].tolist())
-    # macro_m2_ary = np.asarray(macro_data["m2"].tolist())
-    # macro_rrr_ary = np.asarray(macro_data["rrr"].tolist())
-    # macro_rate_ary = np.asarray(macro_data["rate"].tolist())
+    adj_close = close_list
+    obv = talib.OBV(close_list, volume_list)
+    rsi6 = talib.RSI(close_list, timeperiod=6)
+    rsi12 = talib.RSI(close_list, timeperiod=12)
+    sma3 = talib.SMA(close_list, timeperiod=3)
+    ema6 = talib.EMA(close_list, timeperiod=6)
+    ema12 = talib.EMA(close_list, timeperiod=12)
+    atr14 = talib.ATR(high_list, low_list, close_list, timeperiod=14)
+    mfi14 = talib.MFI(high_list, low_list, close_list, volume_list, timeperiod=14)
+    adx14 = talib.ADX(high_list, low_list, close_list, timeperiod=14)
+    adx20 = talib.ADX(high_list, low_list, close_list, timeperiod=20)
+    mom1 = talib.MOM(close_list, timeperiod=1)
+    mom3 = talib.MOM(close_list, timeperiod=3)
+    cci12 = talib.CCI(high_list, low_list, close_list, timeperiod=14)
+    cci20 = talib.CCI(high_list, low_list, close_list, timeperiod=20)
+    rocr3 = talib.ROCR(close_list, timeperiod=3)
+    rocr12 = talib.ROCR(close_list, timeperiod=12)
+    macd, macd_sig, macd_hist = talib.MACD(close_list)
+    willr = talib.WILLR(high_list, low_list, close_list)
+    tsf10 = talib.TSF(close_list, timeperiod=10)
+    tsf20 = talib.TSF(close_list, timeperiod=20)
+    trix = talib.TRIX(close_list)
+    bbandupper, bbandmiddle, bbandlower = talib.BBANDS(close_list)
+    return [adj_close, obv, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, \
+            rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
+
+def run(stock_list, start_date, end_date, pred_interval, save_dir_prefix, train_size, test_size):
 
     # index data (hs300)
-    stock_code = "399300"
-    index_data = ts.get_k_data(stock_code, index=True, start=start_date, end=end_date)
+    index_data = ts.get_k_data(cfg.index_code, index=True, start=start_date, end=end_date)
 
-    open_list = np.asarray(index_data["open"].tolist())
-    close_list = np.asarray(index_data["close"].tolist())
-    high_list = np.asarray(index_data["high"].tolist())
-    low_list = np.asarray(index_data["low"].tolist())
-    volume_list = np.asarray(index_data["volume"].tolist())
-    
-    hs300_adj_close = close_list
-    hs300_obv = talib.OBV(close_list, volume_list)
-    hs300_rsi6 = talib.RSI(close_list, timeperiod=6)
-    hs300_rsi12 = talib.RSI(close_list, timeperiod=12)
-    hs300_sma3 = talib.SMA(close_list, timeperiod=3)
-    hs300_ema6 = talib.EMA(close_list, timeperiod=6)
-    hs300_ema12 = talib.EMA(close_list, timeperiod=12)
-    hs300_atr14 = talib.ATR(high_list, low_list, close_list, timeperiod=14)
-    hs300_mfi14 = talib.MFI(high_list, low_list, close_list, volume_list, timeperiod=14)
-    hs300_adx14 = talib.ADX(high_list, low_list, close_list, timeperiod=14)
-    hs300_adx20 = talib.ADX(high_list, low_list, close_list, timeperiod=20)
-    hs300_mom1 = talib.MOM(close_list, timeperiod=1)
-    hs300_mom3 = talib.MOM(close_list, timeperiod=3)
-    hs300_cci12 = talib.CCI(high_list, low_list, close_list, timeperiod=14)
-    hs300_cci20 = talib.CCI(high_list, low_list, close_list, timeperiod=20)
-    hs300_rocr3 = talib.ROCR(close_list, timeperiod=3)
-    hs300_rocr12 = talib.ROCR(close_list, timeperiod=12)
-    hs300_macd, hs300_macd_sig, hs300_macd_hist = talib.MACD(close_list)
-    hs300_willr = talib.WILLR(high_list, low_list, close_list)
-    hs300_tsf10 = talib.TSF(close_list, timeperiod=10)
-    hs300_tsf20 = talib.TSF(close_list, timeperiod=20)
-    hs300_trix = talib.TRIX(close_list)
-    hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower = talib.BBANDS(close_list)
+    hs300_adj_close, hs300_obv, hs300_rsi6, hs300_rsi12, hs300_sma3, hs300_ema6, hs300_ema12, \
+    hs300_atr14, hs300_mfi14, hs300_adx14, hs300_adx20, hs300_mom1, hs300_mom3, hs300_cci12, \
+    hs300_cci20, hs300_rocr3, hs300_rocr12, hs300_macd, hs300_macd_sig, hs300_macd_hist, \
+    hs300_willr, hs300_tsf10, hs300_tsf20, hs300_trix, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower = \
+        get_predictors(index_data)
 
+    # normalize predictors
     hs300_adj_close, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mom1, hs300_mom3, hs300_tsf10, hs300_tsf20, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower = \
         normalize_price(hs300_adj_close, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mom1, hs300_mom3, hs300_tsf10, hs300_tsf20, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower)
 
@@ -109,13 +104,7 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
     stocks_predictors = []
     for stock_code in stock_list:
 
-        macro_gdp_clone = copy.deepcopy(macro_gdp_ary)
-        macro_cpi_clone = copy.deepcopy(macro_cpi_ary)
-        macro_m2_clone = copy.deepcopy(macro_m2_ary)
-        macro_rrr_clone = copy.deepcopy(macro_rrr_ary)
-        macro_rate_clone = copy.deepcopy(macro_rate_ary)
-
-        cache_data_path = os.path.join(cache_data_dir, "%s_%s_%s" % (stock_code, start_date, end_date))
+        cache_data_path = os.path.join(cfg.cache_dir, "%s_%s_%s" % (stock_code, start_date, end_date))
         if os.path.isfile(cache_data_path):
             f = open(cache_data_path, 'rb')
             stock_data = pickle.load(f)
@@ -126,51 +115,13 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
             pickle.dump(stock_data, f)
             f.close()
 
-        cache_finance_data_path = os.path.join(cache_data_dir, "%s_finance_%s_%s" % (stock_code, start_date, end_date))
-        if os.path.isfile(cache_finance_data_path):
-            f = open(cache_finance_data_path, 'rb')
-            finance_data = pickle.load(f)
-            f.close()
-        else:
-            finance_data = opdata.get_finance(stock_code, start_date, end_date)
-            f = open(cache_finance_data_path, 'wb')
-            pickle.dump(finance_data, f)
-            f.close()
+        adj_close, obv, rsi6, rsi12, sma3, ema6, ema12, \
+        atr14, mfi14, adx14, adx20, mom1, mom3, cci12, \
+        cci20, rocr3, rocr12, macd, macd_sig, macd_hist, \
+        willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower = \
+            get_predictors(stock_data)
 
-        open_list = np.asarray(stock_data["open"].tolist())
-        close_list = np.asarray(stock_data["close"].tolist())
-        high_list = np.asarray(stock_data["high"].tolist())
-        low_list = np.asarray(stock_data["low"].tolist())
-        volume_list = np.asarray(stock_data["volume"].tolist())
-
-        finance_bvps = np.asarray(finance_data["bvps"].tolist())
-        finance_epcf = np.asarray(finance_data["epcf"].tolist())
-        finance_eps = np.asarray(finance_data["eps"].tolist())
-
-        adj_close = close_list
-        obv = talib.OBV(close_list, volume_list)
-        rsi6 = talib.RSI(close_list, timeperiod=6)
-        rsi12 = talib.RSI(close_list, timeperiod=12)
-        sma3 = talib.SMA(close_list, timeperiod=3)
-        ema6 = talib.EMA(close_list, timeperiod=6)
-        ema12 = talib.EMA(close_list, timeperiod=12)
-        atr14 = talib.ATR(high_list, low_list, close_list, timeperiod=14)
-        mfi14 = talib.MFI(high_list, low_list, close_list, volume_list, timeperiod=14)
-        adx14 = talib.ADX(high_list, low_list, close_list, timeperiod=14)
-        adx20 = talib.ADX(high_list, low_list, close_list, timeperiod=20)
-        mom1 = talib.MOM(close_list, timeperiod=1)
-        mom3 = talib.MOM(close_list, timeperiod=3)
-        cci12 = talib.CCI(high_list, low_list, close_list, timeperiod=14)
-        cci20 = talib.CCI(high_list, low_list, close_list, timeperiod=20)
-        rocr3 = talib.ROCR(close_list, timeperiod=3)
-        rocr12 = talib.ROCR(close_list, timeperiod=12)
-        macd, macd_sig, macd_hist = talib.MACD(close_list)
-        willr = talib.WILLR(high_list, low_list, close_list)
-        tsf10 = talib.TSF(close_list, timeperiod=10)
-        tsf20 = talib.TSF(close_list, timeperiod=20)
-        trix = talib.TRIX(close_list)
-        bbandupper, bbandmiddle, bbandlower = talib.BBANDS(close_list)
-
+        # normalize predictors
         adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, macd, macd_sig, macd_hist, bbandupper, bbandmiddle, bbandlower = \
             normalize_price(adj_close, sma3, ema6, ema12, atr14, mom1, mom3, tsf10, tsf20, macd, macd_sig, macd_hist, bbandupper, bbandmiddle, bbandlower)
 
@@ -191,8 +142,6 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
         # 52 features of individual stock and index (obv is removed)
         predictors = [hs300_adj_close, hs300_rsi6, hs300_rsi12, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mfi14, hs300_adx14, hs300_adx20, hs300_mom1, hs300_mom3, hs300_cci12, hs300_cci20, hs300_rocr3, hs300_rocr12, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_willr, hs300_tsf10, hs300_tsf20, hs300_trix, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower, adj_close, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
 
-        # predictor_names = ["adj_close", "rsi6", "rsi12", "sma3", "ema6", "ema12", "atr14", "mfi14", "adx20", "mom1", "mom3", "cci12", "cci20", "rocr12", "macd", "macd_sig", "macd_hist", "willr", "tsf10", "tsf20", "trix", "bbandupper", "bbandmiddle", "bbandlower"]
-
         # get the nan value index
         max_nan_idx = -1
         for idx, predictor in enumerate(predictors):
@@ -201,21 +150,15 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
                 continue
             nan_idx = nan_idxes[-1, 0]
             max_nan_idx = max(max_nan_idx, nan_idx)
-    
+
         # remove nan values
         for idx, predictor in enumerate(predictors):
             predictor = predictor[max_nan_idx+1:]
             predictors[idx] = predictor
+
         if len(set([e.shape[0] for e in predictors])) > 1:
             # predictors have different time length, there must be something wrong
             continue
-
-        for idx, ele in enumerate(predictors):
-            print(idx)
-            print(np.max(ele))
-
-        import pdb
-        pdb.set_trace()
 
         predictors = np.vstack(predictors)
         predictors = np.transpose(predictors)
@@ -253,10 +196,7 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
         stocks_predictors.append(predictors)
         stocks_y_data.append(y_data)
 
-    train_size = 900
-    test_size = 10
     all_size = train_size + test_size
-
     tot_len = stocks_predictors[0].shape[0]
     
     start_idx = 0
@@ -264,8 +204,8 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
     acc_ary = []
 
     # save data to dir
-    sub_data_dir = "pred_%d" % (pred_interval)
-    sub_data_dir_path = os.path.join(pred_data_dir, sub_data_dir)
+    sub_data_dir = "%s_%d" % (save_dir_prefix, pred_interval)
+    sub_data_dir_path = os.path.join(cfg.dataset_dir, sub_data_dir)
     if os.path.isdir(sub_data_dir_path):
         shutil.rmtree(sub_data_dir_path)
     os.mkdir(sub_data_dir_path)
@@ -283,8 +223,6 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
         train_set_x = train_set_x[val_idx,:]
         train_set_y = train_set_y[val_idx].astype(np.float)
         
-        # scaler = preprocessing.StandardScaler().fit(train_set_x)
-
         test_set_x = [predictors[start_idx+train_size:start_idx+train_size+test_size] for predictors in stocks_predictors]
         test_set_x = np.concatenate(test_set_x)
         test_set_y = [y_data[start_idx+train_size:start_idx+train_size+test_size] for y_data in stocks_y_data]
@@ -294,11 +232,8 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
         test_set_x = test_set_x[val_idx,:]
         test_set_y = test_set_y[val_idx].astype(np.float)
         
-        # norm_train_set_x = scaler.transform(train_set_x)
-        # norm_test_set_x = scaler.transform(test_set_x)
         norm_train_set_x = train_set_x
         norm_test_set_x = test_set_x
-
 
         f_train_x = open(os.path.join(sub_data_dir_path, "%d_train_x" % start_idx), 'wb')
         f_train_y = open(os.path.join(sub_data_dir_path, "%d_train_y" % start_idx), 'wb')
@@ -315,35 +250,26 @@ def run(stock_list, start_date="2011-01-01", end_date="2017-07-31", pred_interva
         f_test_x.close()
         f_test_y.close()
 
-        start_idx += 10
-
-'''
-def get_macro_data(start_date, end_date):
-    macro_cache_data_path = os.path.join(cache_data_dir, "macro_%s_%s" % (start_date, end_date))
-    if os.path.isfile(macro_cache_data_path):
-        f = open(macro_cache_data_path, 'rb')
-        macro_data = pickle.load(f)
-        f.close()
-    else:
-        macro_data = opdata.macrodata(start=start_date, end=end_date)
-        f = open(macro_cache_data_path, 'wb')
-        pickle.dump(macro_data, f)
-        f.close()
-    return macro_data
-'''
+        start_idx += test_size
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--lower_weight', help='lower bound of the stock weight in hs300', default='0,1')
+    parser.add_argument('--lower_weight', help='lower bound of the stock weight in hs300', default=1)
     parser.add_argument('--upper_weight', help='upper bound of the stock weight in hs300')
     parser.add_argument('--init_start_date',
                         help='start date of the initialization, should be earlier then start date for the calculation of beta',
                         default='2010-01-01')
     parser.add_argument('--start_date', help='start date of the dataset', default='2011-01-01')
     parser.add_argument('--end_date', help='end date of the dataset', default='2017-09-29')
-    parser.add_argument('--dataset_dir', help='directory for saving the data')
-    parser.add_argument('--pred_interval', default='1,2,3,10')
+    parser.add_argument('--train_size', help='size of each training set', default=700)
+    parser.add_argument('--test_size', help='size of each test set', default=10)
+    parser.add_argument('--save_dir_prefix', required=True)
+    parser.add_argument('--pred_interval', default='1,3,5,10')
     args = parser.parse_args()
+
+    # make sure that the dataset dir exists
+    if os.path.isdir(cfg.dataset_dir) == False:
+        os.mkdir(cfg.dataset_dir)
 
     # for different stock codes, for different prediction intervals, for different percent
     stock_list = ts.get_hs300s()
@@ -355,7 +281,7 @@ if __name__ == "__main__":
     
     stock_code_list = stock_list["code"].tolist()
     
-    initialize(stock_code_list, args.start_date, args.end_date)
+    initialize(stock_code_list, args.init_start_date, args.end_date)
 
     pred_intervals = [int(e) for e in args.pred_interval.split(',')]
 
@@ -363,4 +289,8 @@ if __name__ == "__main__":
         run(stock_code_list,
             start_date=args.start_date,
             end_date=args.end_date,
-            pred_interval=pred_interval)
+            pred_interval=pred_interval,
+            save_dir_prefix=args.save_dir_prefix,
+            train_size=int(args.train_size),
+            test_size=int(args.test_size),
+            )

@@ -8,11 +8,10 @@ from sklearn.linear_model import LinearRegression
 import pickle
 import time
 
+from cfgs.config import cfg
+
 stock_data_cache = { }
 index_data_cache = None
-
-cache_data_dir = "cache_data_with_date"
-index_code = "399300"
 
 min_sample_num = 10
 
@@ -22,23 +21,23 @@ def initialize(stock_code_list, start_str, end_str):
     global stock_data_cache
     global index_data_cache
 
-    if os.path.isdir(cache_data_dir) == False:
-        os.mkdir(cache_data_dir)
+    if os.path.isdir(cfg.cache_dir) == False:
+        os.mkdir(cfg.cache_dir)
 
-    cache_data_path = os.path.join(cache_data_dir, "%s_%s_%s" % (index_code, start_str, end_str)
+    cache_data_path = os.path.join(cfg.cache_dir, "%s_%s_%s" % (cfg.index_code, start_str, end_str))
     if os.path.isfile(cache_data_path):
         f = open(cache_data_path, "rb")
         index_data_cache = pickle.load(f)
         f.close()
     else:
-        index_data_cache = ts.get_k_data(index_code, index=True, start=start_str, end=end_str)
+        index_data_cache = ts.get_k_data(cfg.index_code, index=True, start=start_str, end=end_str)
         f = open(cache_data_path, "wb")
         pickle.dump(index_data_cache, f)
         f.close()
     print("index data cache done")
 
     for stock_code in stock_code_list:
-        cache_data_path = os.path.join(cache_data_dir, "%s_%s_%s" % (stock_code, start_str, end_str))
+        cache_data_path = os.path.join(cfg.cache_dir, "%s_%s_%s" % (stock_code, start_str, end_str))
         if os.path.isfile(cache_data_path):
             f = open(cache_data_path, "rb")
             stock_data_cache[stock_code] = pickle.load(f)
@@ -67,11 +66,11 @@ def calculate_beta(stock_code, date_str, period, point_num):
     start_date = end_date - timedelta(days = int(period * point_num * 2))
     start_str = start_date.strftime("%Y-%m-%d")
     if index_data_cache is None:
-        index_data_cache = ts.get_k_data("399300", index=True, start=start_str, end=date_str)
+        index_data_cache = ts.get_k_data(cfg.index_code, index=True, start=start_str, end=date_str)
     else:
         index_date = index_data_cache['date'].tolist()
         if index_date[0] > start_str or index_date[-1] < date_str:
-            index_data = ts.get_k_data("399300", index=True, start=start_str, end=date_str)
+            index_data = ts.get_k_data(cfg.index_code, index=True, start=start_str, end=date_str)
         else:
             start_idx = next((index_date.index(n) for n in index_date if n >= start_str), len(index_date))
             end_idx = next((index_date.index(n) for n in index_date if n > date_str), len(index_date))
@@ -121,7 +120,7 @@ def calculate_beta(stock_code, date_str, period, point_num):
     for i in range(len(stock_target_close) - 1):
         prev_close = stock_target_close[i]
         next_close = stock_target_close[i + 1]
-        if prev_close == None or next_close == None:
+        if prev_close == None or next_close == None or prev_close == 0 or next_close == 0:
             stock_return.append(None)
         else:
             stock_return.append(next_close / prev_close - 1)

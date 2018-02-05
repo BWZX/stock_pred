@@ -8,15 +8,16 @@ matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 
+from cfgs.config import cfg
 
-pred_interval = 10
-data_dir = "pred_more_data_alpha_900_10_norm/pred_%d" % pred_interval
-save_dir = "rf_plot_results_norm_900_10"
-# inc_macro = False
+prefix = '52feat_900_10'
+
+pred_interval = 3
+data_dir = "%s/%s_%d" % (cfg.dataset_dir, prefix, pred_interval)
+save_dir = "%s/%s_%d" % (cfg.result_dir, prefix, pred_interval)
 
 if os.path.isdir(save_dir) == False:
     os.makedirs(save_dir)
-
 
 def rf_model(norm_train_set_x, train_set_y, norm_test_set_x, test_set_y):
     clf = RandomForestClassifier(n_estimators=200)
@@ -24,9 +25,7 @@ def rf_model(norm_train_set_x, train_set_y, norm_test_set_x, test_set_y):
     test_set_y_pred = clf.predict(norm_test_set_x)
     corr = np.sum((test_set_y_pred == test_set_y).astype(int))
     acc = corr / len(test_set_y)
-
     return acc
-
 
 data_files = os.listdir(data_dir)
 start_idxes = [int(e.split('_')[0]) for e in data_files]
@@ -53,10 +52,6 @@ for start_idx in start_idxes:
     test_x = pickle.load(test_x_f)
     test_y = pickle.load(test_y_f)
 
-    # if inc_macro == False:
-    #     train_x = train_x[:, :54]
-    #     test_x = test_x[:, :54]
-
     train_y = (train_y > 0).astype('int')
     test_y = (test_y > 0).astype('int')
 
@@ -67,7 +62,7 @@ for start_idx in start_idxes:
     acc_ary.append(acc)
 
 acc_mean = np.mean(acc_ary)
-    
+
 fig = plt.figure()
 plt.plot(acc_ary, "o-")
 plt.ylim(0, 1)
@@ -78,3 +73,5 @@ plt.grid()
 fig.savefig("%s/%dday_%.3f.jpg" % (save_dir, pred_interval, acc_mean))
 plt.clf()
 plt.close()
+    
+print("mean acc: %.3f" % acc_mean)
