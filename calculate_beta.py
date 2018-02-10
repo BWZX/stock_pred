@@ -52,10 +52,9 @@ def calculate_beta(stock_code, date_str, period, point_num):
     ''' calculate beta for a specific stock at some specific date
     Argments:
         stock_code:
-        date:
+        date_str: date
         period: base time for calculaing return, e.g., 5 for weekly return, 20 for monthly return
         point_num: number of periods included
-        index_data: if index_data is not None, it can be reused
     Return:
         the calculated beta
     '''
