@@ -1,8 +1,10 @@
 # coding: utf-8
 import os
+import argparse
 import pickle
 import pdb
 import numpy as np
+import uuid
 import matplotlib
 matplotlib.use('agg')
 from matplotlib import pyplot as plt
@@ -10,17 +12,25 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 
 from cfgs.config import cfg
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--est_num', help='number of decision trees', type=int, default=200)
+
+args = parser.parse_args()
+
 prefix = '52feat_900_10'
 
 pred_interval = 3
 data_dir = "%s/%s_%d" % (cfg.dataset_dir, prefix, pred_interval)
 save_dir = "%s/%s_%d" % (cfg.result_dir, prefix, pred_interval)
 
+est_num = args.est_num
+
 if os.path.isdir(save_dir) == False:
     os.makedirs(save_dir)
 
 def rf_model(norm_train_set_x, train_set_y, norm_test_set_x, test_set_y):
-    clf = RandomForestClassifier(n_estimators=200)
+    clf = RandomForestClassifier(n_estimators=est_num)
     clf.fit(norm_train_set_x, train_set_y)
     test_set_y_pred = clf.predict(norm_test_set_x)
     corr = np.sum((test_set_y_pred == test_set_y).astype(int))
@@ -63,6 +73,14 @@ for start_idx in start_idxes:
 
 acc_mean = np.mean(acc_ary)
 
+run_id = str(uuid.uuid4())
+short_id = run_id.split('-')[-1]
+
+acc_str = ','.join(["%.3f" % e for e in acc_ary])
+f = open("%s/%s_rf%d_%.3f.txt" % (save_dir, short_id, est_num, acc_mean), 'w')
+f.write(acc_str)
+f.close()
+
 fig = plt.figure()
 plt.plot(acc_ary, "o-")
 plt.ylim(0, 1)
@@ -70,7 +88,7 @@ plt.ylabel('accuracy')
 plt.xlabel('time (10 days)')
 plt.title('%dday_%.3f' % (pred_interval, acc_mean))
 plt.grid()
-fig.savefig("%s/%dday_%.3f.jpg" % (save_dir, pred_interval, acc_mean))
+fig.savefig("%s/%s_rf%d_%.3f.jpg" % (save_dir, short_id, est_num, acc_mean))
 plt.clf()
 plt.close()
     

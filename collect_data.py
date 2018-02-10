@@ -137,10 +137,10 @@ def run(stock_list, start_date, end_date, pred_interval, save_dir_prefix, train_
 
         # predictors = [adj_close, obv, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower, hs300_adj_close, hs300_obv, hs300_rsi6, hs300_rsi12, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mfi14, hs300_adx14, hs300_adx20, hs300_mom1, hs300_mom3, hs300_cci12, hs300_cci20, hs300_rocr3, hs300_rocr12, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_willr, hs300_tsf10, hs300_tsf20, hs300_trix, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower, macro_gdp_clone, macro_cpi_clone, macro_m2_clone, macro_rrr_clone, macro_rate_clone, finance_bvps, finance_epcf, finance_eps]
         # 26 features of individual stock (obv is removed)
-        # predictors = [adj_close, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
+        predictors = [adj_close, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
 
         # 52 features of individual stock and index (obv is removed)
-        predictors = [hs300_adj_close, hs300_rsi6, hs300_rsi12, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mfi14, hs300_adx14, hs300_adx20, hs300_mom1, hs300_mom3, hs300_cci12, hs300_cci20, hs300_rocr3, hs300_rocr12, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_willr, hs300_tsf10, hs300_tsf20, hs300_trix, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower, adj_close, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
+        # predictors = [hs300_adj_close, hs300_rsi6, hs300_rsi12, hs300_sma3, hs300_ema6, hs300_ema12, hs300_atr14, hs300_mfi14, hs300_adx14, hs300_adx20, hs300_mom1, hs300_mom3, hs300_cci12, hs300_cci20, hs300_rocr3, hs300_rocr12, hs300_macd, hs300_macd_sig, hs300_macd_hist, hs300_willr, hs300_tsf10, hs300_tsf20, hs300_trix, hs300_bbandupper, hs300_bbandmiddle, hs300_bbandlower, adj_close, rsi6, rsi12, sma3, ema6, ema12, atr14, mfi14, adx14, adx20, mom1, mom3, cci12, cci20, rocr3, rocr12, macd, macd_sig, macd_hist, willr, tsf10, tsf20, trix, bbandupper, bbandmiddle, bbandlower]
 
         # get the nan value index
         max_nan_idx = -1
@@ -178,6 +178,9 @@ def run(stock_list, start_date, end_date, pred_interval, save_dir_prefix, train_
         y_data = []
         
         for idx, _ in enumerate(future_close_list):
+            if close_list[idx] == 0:
+                import pdb
+                pdb.set_trace()
             stock_percent = (future_close_list[idx] / close_list[idx] - 1) * 100
             index_percent = (future_index_close_list[idx] / index_close_list[idx] - 1) * 100
             # the stock return should be neutralized by index return
@@ -261,10 +264,10 @@ if __name__ == "__main__":
                         default='2010-01-01')
     parser.add_argument('--start_date', help='start date of the dataset', default='2011-01-01')
     parser.add_argument('--end_date', help='end date of the dataset', default='2017-09-29')
-    parser.add_argument('--train_size', help='size of each training set', default=700)
+    parser.add_argument('--train_size', help='size of each training set', default=900)
     parser.add_argument('--test_size', help='size of each test set', default=10)
     parser.add_argument('--save_dir_prefix', required=True)
-    parser.add_argument('--pred_interval', default='1,3,5,10')
+    parser.add_argument('--pred_interval', default='3')
     args = parser.parse_args()
 
     # make sure that the dataset dir exists
@@ -278,8 +281,11 @@ if __name__ == "__main__":
         stock_list = stock_list.loc[stock_list['weight'] > args.lower_weight]
     if args.upper_weight != None:
         stock_list = stock_list.loc[stock_list['weight'] < args.upper_weight]
-    
+
     stock_code_list = stock_list["code"].tolist()
+    
+    # ugly, remove 000333
+    stock_code_list.remove('000333')
     
     initialize(stock_code_list, args.init_start_date, args.end_date)
 
